@@ -1,0 +1,32 @@
+{
+    "terminal.integrated.env.osx": {
+        "PATH": "/Users/tbucha/.platformio/penv/bin:/Users/tbucha/.platformio/penv:/opt/local/bin:/opt/local/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Users/tbucha/Software/ruby/bin",
+        "PLATFORMIO_CALLER": "vscode"
+    },
+    "files.associations": {
+        "functional": "cpp",
+        "array": "cpp",
+        "initializer_list": "cpp",
+        "*.tcc": "cpp",
+        "cctype": "cpp",
+        "clocale": "cpp",
+        "cmath": "cpp",
+        "cstdint": "cpp",
+        "cstdio": "cpp",
+        "cstdlib": "cpp",
+        "cwchar": "cpp",
+        "exception": "cpp",
+        "iosfwd": "cpp",
+        "limits": "cpp",
+        "new": "cpp",
+        "stdexcept": "cpp",
+        "tuple": "cpp",
+        "type_traits": "cpp",
+        "typeinfo": "cpp",
+        "utility": "cpp"
+    },
+    "terminal.integrated.env.linux": {
+        "PATH": "/home/truebucha/.platformio/penv/bin:/home/truebucha/.platformio/penv:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/home/truebucha/.local/bin:/home/truebucha/bin:/home/truebucha/.local/bin:/home/truebucha/bin",
+        "PLATFORMIO_CALLER": "vscode"
+    }
+}
