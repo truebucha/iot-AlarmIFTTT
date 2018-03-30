@@ -8,10 +8,10 @@
 
 #include "IFTTTWebhook.h"
 
-// #define logToSerial Serial
+#define logToSerial Serial
 
 uint8_t ledPin = 2;
-uint8_t alarmPin = 13;
+uint8_t alarmPin = 14;
 uint8_t guardPin = 12;
 
 String logStorage = String();
@@ -19,8 +19,17 @@ String logStorage = String();
 ESP8266WebServer httpServer(80);
 ESP8266HTTPUpdateServer httpUpdater;
 
-bool stateAlarm = false;
-bool stateOnGuard = false;
+
+typedef enum GuardMode 
+{
+    GUARD_UNDEFINED = 0, GUARD_ON = 1, GUARD_OFF = 3
+} GuardMode_t;
+
+bool alarmEvent = false;
+bool guardEvent = false;
+
+bool alarmState = false;
+GuardMode guardState = GUARD_UNDEFINED;
 
 const int stationTimeoutSec = 20;
 const int apnTimeoutSec = 120; 
@@ -38,7 +47,16 @@ const IPAddress subnet(255,255,255,0);
 
 // Station
 const char satationAp[]  = "puntodeacceso";
-const char satationPass[] = "***";
+const char satationPass[] = "hotspot131415";
+
+
+// IFTTT
+
+ char iftttEventName[] = "Nalibokskaya1";
+ char iftttApiKey[] = "lmUyJJg56fscFEvTWAUyg";
+//  "cnQR7G8RpcLjzFkAKwyHtx"
+
+IFTTTWebhook iftttWebHook(iftttApiKey, iftttEventName);
 
 // ============================================
 
@@ -68,7 +86,7 @@ void LOG(T t, Args... args) {// recursive variadic function
     logStorage += String(t);
     cutLog();
 
-    LOG(args...) ;
+    LOG(args...);
 }
 
 // ====================================
@@ -79,8 +97,6 @@ void applyEventDelay(int delay) {
 }
 
 bool couldProcessNextEvent() {
-
-
   
   if (eventDelayCountdown <= 1) {
 
@@ -121,10 +137,26 @@ String stateString() {
   result += String(ESP.getFreeHeap());
 
   result += (F("\nAlarm: "));
-  result += String(stateAlarm);
+  result += String(alarmState? (F("YES")):(F("NO")));
 
   result += (F("\nOn Guard: "));
-  result += String(stateOnGuard);
+
+  switch (guardState) {
+    case GUARD_UNDEFINED:
+
+      result += String((F("UNDEFINED")));
+      break;
+
+    case GUARD_OFF:
+
+      result += String((F("OFF")));
+      break;
+
+    case GUARD_ON:
+
+      result += String((F("ON")));
+      break;
+  }
 
   return result;
 }
@@ -240,19 +272,25 @@ void checkWifiConnection() {
 
 void handleOnGuardEvent() {
 
-  LOG("\n on guard event initiated");
+  guardState = GUARD_ON;
 
-  httpServer.send(200, (F("text/plain")), logStorage.c_str());
+  iftttWebHook.trigger("Guard On");
+
+  LOG("\n on guard event initiated");
 }
 
 void handleOffGuardEvent() {
 
-  LOG("\n off guard event initiated");
+  guardState = GUARD_OFF;
 
-  httpServer.send(200, (F("text/plain")), logStorage.c_str());
+  iftttWebHook.trigger("Guard Off");
+
+  LOG("\n off guard event initiated");
 }
 
 void handleGuardEvent() {
+
+  guardEvent = false;
 
   if (digitalRead(guardPin) == 0) {
 
@@ -272,8 +310,43 @@ void toggleLED() {
 
 void handleAlarmEvent() {
 
-  LOG(F("\nALARM event initiated"));
+  alarmEvent = false;
+  alarmState = true;
 
+  iftttWebHook.trigger("Alarm");
+
+  LOG(F("\nALARM event initiated"));
+}
+
+// ========================
+
+void initiateGuardEvent() {
+
+  guardEvent = true;
+}
+
+void initiateAlarmEvent() {
+
+  alarmEvent = true;
+}
+
+// =========================
+
+void toggleOnGuardEvent() {
+
+  handleOnGuardEvent();
+  httpServer.send(200, (F("text/plain")), logStorage.c_str());
+}
+
+void toggleOffGuardEvent() {
+
+  handleOffGuardEvent();
+  httpServer.send(200, (F("text/plain")), logStorage.c_str());
+}
+
+void toggleAlarmEvent() {
+
+  handleAlarmEvent();
   httpServer.send(204, "Ok");
 }
 
@@ -321,9 +394,9 @@ void setupServer() {
   httpServer.on("/", respondWithState);
   httpServer.on("/log", respondWithLog);
 
-  httpServer.on("/alarm", handleAlarmEvent);
-  httpServer.on("/guardon", handleOnGuardEvent);
-  httpServer.on("/guardoff", handleOffGuardEvent);
+  httpServer.on("/alarm", toggleAlarmEvent);
+  httpServer.on("/guardon", toggleOnGuardEvent);
+  httpServer.on("/guardoff", toggleOffGuardEvent);
 
   httpServer.begin();
 
@@ -339,8 +412,8 @@ void setupPins() {
 
 void setupInterrupts() {
 
-  attachInterrupt(alarmPin,  handleAlarmEvent, RISING);
-  attachInterrupt(alarmPin,  handleGuardEvent, CHANGE);
+  attachInterrupt(alarmPin,  initiateAlarmEvent, FALLING);
+  attachInterrupt(guardPin,  initiateGuardEvent, CHANGE);
 }
 
 // ===================
@@ -357,8 +430,19 @@ void setup() {
   setupServer();
 }
 
-
 void loop() {
+
+  if (alarmEvent) {
+
+    handleAlarmEvent();
+  }
+  yield();
+
+  if (guardEvent) {
+
+    handleGuardEvent();
+  }
+  yield();
 
   if (couldProcessNextEvent()) {
 
