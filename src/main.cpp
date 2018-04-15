@@ -73,14 +73,14 @@ const IPAddress subnet(255,255,255,0);
 // const char satationPass[] = "hotspot131415";
 
 const int stationCredsCount = 2;
-AcessPointCredentials stationCreds[stationCredsCount] = { AcessPointCredentials("**", "**"),
-                                                          AcessPointCredentials("**", "**") };
+AcessPointCredentials stationCreds[stationCredsCount] = { AcessPointCredentials("***", "***"),
+                                                          AcessPointCredentials("***", "***") };
 
 
 // IFTTT
 
-char iftttEventName[] = "**";
-char  iftttApiKey[] = "**";
+char iftttEventName[] = "***";
+char  iftttApiKey[] = "***";
 //  "**"
 
 IFTTTWebhook iftttWebHook(iftttApiKey, iftttEventName);
@@ -313,6 +313,8 @@ void checkWifiConnection() {
 
     if  (WiFi.status() == WL_CONNECTED) {
 
+      WiFi.setSleepMode(WIFI_MODEM_SLEEP);
+
       LOG((F("Station connected after ")));
       LOG(ms);
       LOG((F("ms, IP address: ")));
@@ -492,6 +494,7 @@ void setup() {
   setupServer();
   
   WiFi.mode(WIFI_STA);
+  // WiFi.setSleepMode(WIFI_MODEM_SLEEP);
 }
 
 void loop() {
