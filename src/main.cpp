@@ -9,6 +9,12 @@
 #include "IFTTTWebhook.h"
 
 #define logToSerial Serial
+#define eventProcessingDelay 3e3
+#define socLoopDelay 1e2
+
+#define logLength 10000
+
+#define mDnsName "alarm"
 
 uint8_t ledPin = 2;
 uint8_t alarmPin = 14;
@@ -37,6 +43,22 @@ unsigned long apnStartTime = 0;
 unsigned long lastEventCheckTime = 0;
 int eventDelayCountdown = 0;
 
+class AcessPointCredentials {
+    // Access specifier
+    public:
+ 
+    // Data Members
+    char * name;
+    char * ssid;
+
+    AcessPointCredentials(char * apName,
+            char * apSsid) {
+      
+      name = apName;
+      ssid = apSsid;
+    }
+};
+
 //AP
 const char apnName[] = "Alarm";
 const char apnPass[] = "alarmalarmalarm";
@@ -46,15 +68,20 @@ const IPAddress gateway(192,168,4,1);
 const IPAddress subnet(255,255,255,0);
 
 // Station
-const char satationAp[]  = "puntodeacceso";
-const char satationPass[] = "hotspot131415";
+
+// const char satationAp[]  = "puntodeacceso";
+// const char satationPass[] = "hotspot131415";
+
+const int stationCredsCount = 2;
+AcessPointCredentials stationCreds[stationCredsCount] = { AcessPointCredentials("**", "**"),
+                                                          AcessPointCredentials("**", "**") };
 
 
 // IFTTT
 
- char iftttEventName[] = "Nalibokskaya1";
- char iftttApiKey[] = "lmUyJJg56fscFEvTWAUyg";
-//  "cnQR7G8RpcLjzFkAKwyHtx"
+char iftttEventName[] = "**";
+char  iftttApiKey[] = "**";
+//  "**"
 
 IFTTTWebhook iftttWebHook(iftttApiKey, iftttEventName);
 
@@ -62,7 +89,7 @@ IFTTTWebhook iftttWebHook(iftttApiKey, iftttEventName);
 
 void cutLog() {
 
-  if (logStorage.length() > 2000) {
+  if (logStorage.length() > logLength) {
 
     logStorage = logStorage.substring(100);
   }
@@ -121,43 +148,69 @@ bool couldProcessNextEvent() {
 // ===========================
 // State
 
+String statusString() {
+  
+  String result = String((F("<br/>in Access Point mode: ")));
+  result += String(WiFi.getMode() == WIFI_AP ? (F("YES")):(F("NO")));
+  result += String(F("<br/>apnStartTime: "));
+  result += String(apnStartTime);
+
+  result += String(F("<br/>Guard Pin Raised: "));
+  result += String(digitalRead(guardPin) == 1 ? (F("YES")):(F("NO")));
+  result += String(F("<br/>Alarm Pin Rased: "));
+  result += String(digitalRead(alarmPin) == 1 ? (F("YES")):(F("NO")));
+  result += String(F("<br/>Next Event Countdown: "));
+  result += String(eventDelayCountdown);
+
+  return result;
+}
+
 String stateString() {
   
   String result = String();
 
-  result += (F("\ndevice config\n"));
+  result += F("<p><br>=====================");
+  result += F("<br><br>device config\n");
 
-  result += ("\nSketch size: ");
+  result += F("<br>Sketch size: ");
   result += String(ESP.getSketchSize());
 
-  result += (F("\nFree size: "));
+  result += F("<br>Free size: ");
   result += String(ESP.getFreeSketchSpace());
 
-  result += (F("\nFree Heap: "));
+  result += F("<br>Free Heap: ");
   result += String(ESP.getFreeHeap());
 
-  result += (F("\nAlarm: "));
+  result += F("<br>Alarm: ");
   result += String(alarmState? (F("YES")):(F("NO")));
 
-  result += (F("\nOn Guard: "));
+  result += (F("<br>On Guard: "));
 
   switch (guardState) {
     case GUARD_UNDEFINED:
 
-      result += String((F("UNDEFINED")));
+      result += F("UNDEFINED");
       break;
 
     case GUARD_OFF:
 
-      result += String((F("OFF")));
+      result += F("OFF");
       break;
 
     case GUARD_ON:
 
-      result += String((F("ON")));
+      result += F("ON");
       break;
   }
 
+  result += F("</p><br>==============</p>");
+  result += statusString();
+  result += F("</p><br>==============</p>");
+  result += String(F("<br>Links:"));
+  result += String(F("<br><li><a href=\"\\log\">log</a> - show device log"));
+  result += String(F("<br><li><a href=\"\\update\">update</a> - update device "));
+  
+  result += F("</p><br>==============</p>");
   return result;
 }
 
@@ -212,47 +265,67 @@ void checkWifiConnection() {
     WiFi.softAPdisconnect(true);
   }
 
-  if (WiFi.getMode() == WIFI_AP
-     || WiFi.status() == WL_CONNECTED) {
+  if (WiFi.getMode() == WIFI_AP) {
 
-    LOG((F("WiFi Ok")));
+    LOG((F("WiFi AP - OK")));
     return;
   } 
 
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(satationAp, satationPass);
+  if (WiFi.status() == WL_CONNECTED) {
+
+    LOG((F("WiFi Station - OK")));
+    return;
+  }
 
   LOG((F("Connecting station")));
 
   int ms = 0;
   int timeout = stationTimeoutSec * 1000;
 
-  while (WiFi.status() != WL_CONNECTED) {
 
-    delay(500);
-    ms += 500;
-    LOG((F(".")));
-    if (ms > timeout) {
+  int stationCredsIndex = 0;
 
-      LOG((F("Aborted during timeout")));
-      WiFi.disconnect();
-      break;
+  while (stationCredsIndex < stationCredsCount) {
+
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(stationCreds[stationCredsIndex].name,
+               stationCreds[stationCredsIndex].ssid);
+    
+    String message = String(F("Connect to AP #"));
+    message += String(stationCredsIndex);
+    message += String(F(" : "));
+    char * name = stationCreds[stationCredsIndex].name;
+    message += String(name);
+    LOG(message);
+
+    while (WiFi.status() != WL_CONNECTED) {
+
+      delay(500);
+      ms += 500;
+      LOG((F(".")));
+      if (ms > timeout) {
+
+        LOG((F("Aborted during timeout")));
+        WiFi.disconnect();
+        break;
+      }
     }
-  }
 
-  if  (WiFi.status() == WL_CONNECTED) {
+    if  (WiFi.status() == WL_CONNECTED) {
 
-    LOG((F("Station connected after ")));
-    LOG(ms);
-    LOG((F("ms, IP address: ")));
-    LOG(WiFi.localIP().toString());
-    return;
+      LOG((F("Station connected after ")));
+      LOG(ms);
+      LOG((F("ms, IP address: ")));
+      LOG(WiFi.localIP().toString());
+      return;
+    }
+
+    ms = 0;
+    stationCredsIndex += 1;
   }
 
   LOG((F("Starting Access Point...")));
   WiFi.mode(WIFI_AP);
-
-
 
   WiFi.softAPConfig(localIP, gateway, subnet);
   if (WiFi.softAP(wifiApName().c_str(), apnPass) == false) {
@@ -263,8 +336,7 @@ void checkWifiConnection() {
   apnStartTime = millis();
 
   LOG((F("Acceess Point is up, IP address: ")));
-  LOG(WiFi.softAPIP().toString());
-
+  LOG(WiFi.softAPIP().toString()); 
 }
 
 // ========================
@@ -274,7 +346,7 @@ void handleOnGuardEvent() {
 
   guardState = GUARD_ON;
 
-  iftttWebHook.trigger("Guard On");
+  iftttWebHook.trigger("Guard-On");
 
   LOG("\n on guard event initiated");
 }
@@ -283,7 +355,7 @@ void handleOffGuardEvent() {
 
   guardState = GUARD_OFF;
 
-  iftttWebHook.trigger("Guard Off");
+  iftttWebHook.trigger("Guard-Off");
 
   LOG("\n off guard event initiated");
 }
@@ -335,13 +407,13 @@ void initiateAlarmEvent() {
 void toggleOnGuardEvent() {
 
   handleOnGuardEvent();
-  httpServer.send(200, (F("text/plain")), logStorage.c_str());
+  httpServer.send(204, "Ok");
 }
 
 void toggleOffGuardEvent() {
 
   handleOffGuardEvent();
-  httpServer.send(200, (F("text/plain")), logStorage.c_str());
+  httpServer.send(204, "Ok");
 }
 
 void toggleAlarmEvent() {
@@ -352,27 +424,17 @@ void toggleAlarmEvent() {
 
 void respondWithState() {
 
-  String response = stateString();
+  String response = String((F("<html><body><p>")));
+  response += stateString();
+  response += F("</body></html>");
 
-  httpServer.send(200, (F("text/plain")), response.c_str() );
+  httpServer.send(200, (F("text/html")), response.c_str() );
 }
 
 void respondWithLog() {
 
   String response = String(F("<html><body><p>"));
-  response += String(F("<br/>in Access Point mode: "));
-  response += String(WiFi.getMode() == WIFI_AP ? (F("YES")):(F("NO")));
-  response += String(F("<br/>apnStartTime: "));
-  response += String(apnStartTime);
-
-  response += String(F("<br/>Guard Pin Raised: "));
-  response += String(digitalRead(guardPin) == 1 ? (F("YES")):(F("NO")));
-  response += String(F("<br/>Alarm Pin Rased: "));
-  response += String(digitalRead(alarmPin) == 1 ? (F("YES")):(F("NO")));
-  response += String(F("<br/>Next Event Countdown: "));
-  response += String(eventDelayCountdown);
-  // response += String(F("<br/>Modem Network Connection Sequental Failures Count: "));
-  // response += String(modemConnectionSequentalFailuresCount);
+  response += statusString();
   response += String((F("</p><pre>")));
   response += logStorage;
   response += String((F("</pre></body></html>\n\r")));
@@ -385,7 +447,7 @@ void respondWithLog() {
 
 void setupServer() {
 
-  MDNS.begin("esp");
+  MDNS.begin(mDnsName);
 
   httpUpdater.setup(&httpServer, "/update");
 
@@ -428,30 +490,33 @@ void setup() {
   setupPins();
   setupInterrupts();
   setupServer();
+  
+  WiFi.mode(WIFI_STA);
 }
 
 void loop() {
 
-  if (alarmEvent) {
+    if (couldProcessNextEvent()) {
 
-    handleAlarmEvent();
-  }
-  yield();
+      if (alarmEvent) {
 
-  if (guardEvent) {
+        handleAlarmEvent();
+        yield();
+      }
+       
 
-    handleGuardEvent();
-  }
-  yield();
+    if (guardEvent) {
 
-  if (couldProcessNextEvent()) {
-
+      handleGuardEvent();
+      yield();
+    }
+  
     checkWifiConnection();
-    applyEventDelay(5000);
+    applyEventDelay(eventProcessingDelay);
   }
   
   httpServer.handleClient();
-  yield();
+  delay(socLoopDelay);
 }
 
 
